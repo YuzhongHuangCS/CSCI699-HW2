@@ -542,7 +542,7 @@ def main(argv):
 	model = SegmentationModel()
 	#model.build_model()
 	model.load("unet_keras.pickle")
-	model.train("id_file.txt")
+	#model.train("id_file.txt")
 	#model.save("model_file_lr")
 	#model.load("model_file_no_9.pickle")
 	#model.train("id_file.txt")

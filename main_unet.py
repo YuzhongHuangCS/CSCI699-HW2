@@ -325,7 +325,7 @@ VALIDATION_STEPS = 145//BATCH_SIZE//VAL_SUBSPLITS
 
 def save(model_out_file):
 	"""Saves model parameters to disk."""
-	variables_dict = {v.name: v for v in tf.trainable_variables()}
+	variables_dict = {v.name: v for v in tf.global_variables()}
 	values_dict = sess.run(variables_dict)
 	np.savez(open(model_out_file, 'wb'), **values_dict)
 
