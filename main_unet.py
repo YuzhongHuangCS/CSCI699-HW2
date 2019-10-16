@@ -329,14 +329,15 @@ def save(model_out_file):
 	values_dict = sess.run(variables_dict)
 	np.savez(open(model_out_file, 'wb'), **values_dict)
 
-model_history = model.fit(train_dataset, epochs=EPOCHS,
-													steps_per_epoch=STEPS_PER_EPOCH,
+pdb.set_trace()
+model_history = model.fit(train_dataset, epochs=1,
+													steps_per_epoch=1,
 													validation_steps=1,
 													validation_data=test_dataset,
 													callbacks=[DisplayCallback()])
 
 pdb.set_trace()
-save('unet_keras.pickle')
+save('unet_1.pickle')
 loss = model_history.history['loss']
 val_loss = model_history.history['val_loss']
 

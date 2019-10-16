@@ -207,16 +207,16 @@ class SegmentationModel:
 			if v.name in values_dict:
 				ops.append(v.assign(values_dict[v.name]))
 
-		pdb.set_trace()
+		#pdb.set_trace()
 		#ops = [v.assign(values_dict[v.name]) for v in tf.global_variables()]
 		self.sess.run(ops)
 
 	def _save_weight(self):
-		tf_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
+		tf_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
 		self.smallest_weight = self.sess.run(tf_vars)
 
 	def _load_weights(self):
-		tf_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
+		tf_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
 		ops = []
 		for i_tf in range(len(self.smallest_weight)):
 			ops.append(tf.assign(tf_vars[i_tf], self.smallest_weight[i_tf]))
@@ -239,7 +239,7 @@ class SegmentationModel:
 			take the argmax on the last column for accuracy (and might calculate AUC).
 		"""
 		#testing_dataset = tf.data.Dataset.from_tensor_slices(images)
-		#tf.keras.backend.set_learning_phase(0)
+		tf.keras.backend.set_learning_phase(0)
 		testing_dataset = tf.data.Dataset.from_tensor_slices(np.asarray(images)).map(lambda x: tf.image.resize(x, [self.image_size, self.image_size]) / 255.0)
 		#testing_dataset_shape = tf.data.Dataset.from_tensor_slices(np.full((len(images), 2), 500, dtype=np.int32))
 		testing_iterator_X = tf.data.Dataset.zip((testing_dataset, )).batch(self.batch_size).make_initializable_iterator()
@@ -291,7 +291,7 @@ class SegmentationModel:
 			train_ids_file: file containing image IDs.
 		"""
 		# TODO(student): Feel free to remove if you do not use.
-		#tf.keras.backend.set_learning_phase(1)
+		tf.keras.backend.set_learning_phase(0)
 		file_pairs = tf.data.Dataset.zip(get_filename_data_readers(train_ids_file, True))
 		#training_dataset = file_pairs.shuffle(buffer_size=2500).map(read_image_pair_with_padding).batch(self.batch_size)
 		training_dataset = file_pairs.map(read_image_pair_with_padding).batch(self.batch_size)
@@ -318,11 +318,13 @@ class SegmentationModel:
 								self.handle_Y: training_handle_Y,
 							}
 					)
+					'''
 					if j == 0:
 						plt.imshow(train_pred[0])
 						plt.colorbar()
 						plt.show()
 						pdb.set_trace()
+					'''
 					loss_ary.append(train_loss)
 					j += 1
 					print('Epoch', i, 'Batch', j, train_loss)
@@ -337,7 +339,7 @@ class SegmentationModel:
 		print('Done training')
 
 	def test(self, test_ids_file):
-		#tf.keras.backend.set_learning_phase(0)
+		tf.keras.backend.set_learning_phase(0)
 
 		files = get_filename_data_readers(test_ids_file, False)
 		testing_dataset = files.map(decode_image_with_padding).batch(self.batch_size)
@@ -395,7 +397,9 @@ class SegmentationModel:
 		# hack for keras
 		# save weights and reinitalize
 		base_model = tf.keras.applications.MobileNetV2(input_shape=[image_size, image_size, 3], include_top=False)
+		base_model.trainable = False
 		n_pre_train = len(tf.trainable_variables())
+		#pdb.set_trace()
 		self._save_weight()
 
 		layer_names = [
@@ -419,7 +423,7 @@ class SegmentationModel:
 
 		last = tf.keras.layers.Conv2DTranspose(
 				self.num_classes, 3, strides=2,
-				padding='same', activation='softmax')  #64x64 -> 128x128
+				padding='same', activation=None)  #64x64 -> 128x128
 
 		# Downsampling through the model
 		skips = down_stack(X)
@@ -441,10 +445,15 @@ class SegmentationModel:
 		output_final = x
 		# 255 is clamped to 0
 		Y = tf.reshape(Y, [-1, self.image_size, self.image_size])
-		Y_bin = tf.clip_by_value(Y, 0, 1)
+		Y_bin = tf.cast(tf.clip_by_value(Y, 0, 1), tf.float32)
 		#masks = masks * Y_bin
 		#masks = Y_bin
-		loss = tf.reduce_mean(tf.boolean_mask(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=Y, logits=output_final), Y_bin))
+
+		e1 = tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=Y, logits=output_final) * Y_bin, axis=[1, 2])
+		e2 = tf.reduce_sum(Y_bin, axis=[1, 2])
+		loss = tf.reduce_mean(e1/e2)
+		#loss = tf.reduce_mean(tf.ragged.boolean_mask(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=Y, logits=output_final), Y_bin))
+		#pdb.set_trace()
 		#loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=Y, logits=output_final))
 		#loss = tf.boolean_mask(tf.keras.losses.sparse_categorical_crossentropy(Y, output_final), Y_bin)
 		pred = tf.argmax(output_final, axis=3)
@@ -453,6 +462,7 @@ class SegmentationModel:
 
 		update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 		with tf.control_dependencies(update_ops):
+			#train_op = optimizer.minimize(loss)
 			train_op = optimizer.minimize(loss, var_list=tf.trainable_variables()[n_pre_train:])
 		#pdb.set_trace()
 
@@ -463,7 +473,7 @@ class SegmentationModel:
 
 		self.loss = loss
 		self.pred = pred
-		self.output = output_final
+		self.output = tf.nn.softmax(output_final)
 		self.train_op = train_op
 		self.is_training = is_training
 		self.handle_X = handle_X
@@ -541,7 +551,7 @@ def main(argv):
 	'''
 	model = SegmentationModel()
 	#model.build_model()
-	model.load("unet_keras.pickle")
+	#model.load("unet_keras.pickle")
 	#model.train("id_file.txt")
 	#model.save("model_file_lr")
 	#model.load("model_file_no_9.pickle")
